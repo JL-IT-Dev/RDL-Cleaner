@@ -1,5 +1,11 @@
 # RDL Cleaner
 
+[Español](#español) | [English](#english)
+
+---
+
+## Español
+
 ## 1. Propósito
 
 **RDL Cleaner** es una utilidad de consola para Windows desarrollada en C. Su propósito es limpiar el contenido de las carpetas conocidas **Descargas**, **Documentos** y **Escritorio** de la cuenta bajo cuyo contexto se ejecuta el proceso.
@@ -318,3 +324,314 @@ Debido a que realiza eliminación recursiva de datos, el despliegue debe estar a
 RDL Cleaner es una utilidad local sin conectividad de red ni mecanismos de persistencia. Recorre Descargas, Documentos y Escritorio del perfil asociado al proceso. Su modo predeterminado es de simulación y el borrado requiere `--execute`.
 
 Conserva accesos directos del Escritorio por extensión, no recorre puntos de análisis y continúa después de errores individuales. Sus riesgos principales son el borrado permanente, la actuación sobre carpetas redirigidas, la ausencia de registro persistente, el límite `MAX_PATH`, el código de salida no representativo y la dependencia del contexto de seguridad de ejecución.
+
+---
+
+## English
+
+### 1. Purpose
+
+**RDL Cleaner** is a Windows console utility developed in C. Its purpose is to clean the contents of the known **Downloads**, **Documents**, and **Desktop** folders for the account under whose context the process is running.
+
+The application has two modes:
+- **Simulation:** lists what would be deleted without modifying the system.
+- **Execution:** permanently deletes the identified items.
+
+On the Desktop, it preserves `.lnk` and `.url` files, which are commonly used as shortcuts.
+
+**Warning:** execution mode does not send items to the Recycle Bin.
+
+### 2. Scope
+
+The program processes:
+- Downloads, through `FOLDERID_Downloads`.
+- Documents, through `FOLDERID_Documents`.
+- Desktop, through `FOLDERID_Desktop`.
+
+It does not use fixed paths such as `C:\Users\user\Desktop`. It obtains the current location through `SHGetKnownFolderPath`. Therefore, it may operate on folders redirected by Windows, OneDrive, or profile policies.
+
+#### Behavior by folder
+- **Downloads:** recursively deletes all files and subfolders, but preserves the root folder.
+- **Documents:** recursively deletes all files and subfolders, but preserves the root folder.
+- **Desktop:** recursively deletes the contents, except for `.lnk` and `.url` files, and preserves the root folder.
+
+A Desktop subfolder containing a preserved shortcut also remains because it is not empty.
+
+### 3. Operating modes
+
+#### Simulation
+
+```text
+RDL_Cleaner.exe
+```
+
+This is the default mode. It does not delete items or change attributes. It displays in the console the files and folders that would be processed.
+
+```text
+[SIMULATION] File: C:\Users\user\Downloads\file.zip
+[SIMULATION] Folder: C:\Users\user\Documents\Temporary
+[PRESERVED] Shortcut: C:\Users\user\Desktop\Application.lnk
+```
+
+#### Execution
+
+```text
+RDL_Cleaner.exe --execute
+```
+
+Deletion is enabled only if exactly one argument equal to `--execute` is received. The comparison is case-insensitive. Any other argument keeps the program in simulation mode.
+
+In execution mode:
+- It deletes files through `DeleteFileW`.
+- It deletes empty folders through `RemoveDirectoryW`.
+- It does not request interactive confirmation.
+- It does not use the Recycle Bin.
+
+### 4. Execution flow
+
+- `wmain` checks whether `--execute` was provided.
+- It sets simulation or execution mode.
+- It locates and processes Downloads.
+- It locates and processes Documents.
+- It locates and processes the Desktop while preserving `.lnk` and `.url` files.
+- It releases the memory allocated for each path with `CoTaskMemFree`.
+- It displays a message indicating that the process has finished.
+
+Processing is sequential. An individual error does not stop the remaining items from being processed.
+
+### 5. Function descriptions
+
+#### `isDesktopShortcut`
+
+Finds the file extension with `wcsrchr` and uses `_wcsicmp` to recognize `.lnk` and `.url` without case sensitivity. The decision is based only on the file name; it does not validate the internal contents of the shortcut.
+
+#### `joinPath`
+
+Concatenates the directory and name using `swprintf`. It checks whether the result fits in the buffer. If the path exceeds the buffer capacity, it returns `false`, and the item is not processed.
+
+#### `directoryIsEmpty`
+
+Enumerates a folder with `FindFirstFileW` and `FindNextFileW`, ignoring `.` and `..`. It is used after recursive traversal to determine whether a subfolder can be deleted.
+
+#### `deleteFileSafely`
+
+In simulation mode, it only displays the path. In execution mode, it:
+- Reads attributes with `GetFileAttributesW`.
+- Removes the `READONLY`, `HIDDEN`, and `SYSTEM` attributes.
+- Attempts deletion through `DeleteFileW`.
+- Reports success or the `GetLastError` code.
+
+The term "Safely" refers to error handling. It does not imply recovery, cryptographic erasure, or sending the file to the Recycle Bin.
+
+#### `deleteDirectorySafely`
+
+In simulation mode, it displays the path. In execution mode, it changes the attributes to `FILE_ATTRIBUTE_NORMAL` and attempts to delete the folder through `RemoveDirectoryW`. The operation fails if the folder is not empty or if permissions are insufficient.
+
+#### `cleanDirectory`
+
+Performs recursive traversal:
+- Skips `.` and `..`.
+- Builds the full path.
+- Detects reparse points.
+- Recursively processes normal folders.
+- Deletes subfolders that are empty after processing.
+- Preserves `.lnk` and `.url` files when `preserveShortcuts` is `true`.
+- Requests deletion of all other files.
+
+`preserveShortcuts` is `false` for Downloads and Documents, and `true` for the Desktop.
+
+#### `getKnownFolderPath`
+
+Obtains the location of a known folder through `SHGetKnownFolderPath` and `KF_FLAG_DEFAULT`. If the operation fails, it displays the `HRESULT` and returns `NULL`.
+
+#### `cleanKnownFolder`
+
+Resolves the path, displays the detected location, calls `cleanDirectory`, and releases the memory with `CoTaskMemFree`. If it cannot resolve the folder, it reports the error and continues.
+
+#### `wmain`
+
+Interprets the arguments, selects the mode, processes the three folders, and displays the completion message. It currently returns `0` even if partial errors occurred.
+
+### 6. Reparse points, links, and junctions
+
+Before entering a folder, the program checks for `FILE_ATTRIBUTE_REPARSE_POINT`.
+
+When it finds one:
+- It does not traverse the target.
+- If it appears as a directory, it attempts to remove the link with `RemoveDirectoryW`.
+- If it appears as a file, it attempts to remove the link with `DeleteFileW`.
+
+This control reduces the risk of traversing external paths through symbolic links or junctions. The result depends on the reparse point type and its permissions, so it must be tested in the target environment.
+
+### 7. Built-in controls
+
+- **Default simulation:** deletion requires `--execute`.
+- **Known Folder API:** avoids assuming fixed paths.
+- **No reparse-point traversal:** prevents entering linked targets.
+- **Path validation:** rejects concatenations that exceed the buffer.
+- **Shortcut preservation:** preserves `.lnk` and `.url` files on the Desktop.
+- **Operation messages:** reports simulations, preserved items, deletions, and errors.
+- **Continues after errors:** one failure does not stop the entire execution.
+
+### 8. Privileges and context
+
+The code does not request elevation or modify the security token. It operates with the permissions of the identity that starts the process.
+
+Consequences:
+- It can delete only objects for which it has permission.
+- Locked or protected files may fail.
+- Elevated execution increases the permitted scope.
+- Execution as `SYSTEM` may resolve the system profile folders rather than those of the signed-in employee.
+
+Before automating it, validate which identity will run the process and which profile `SHGetKnownFolderPath` will resolve.
+
+### 9. Error handling
+
+Errors are written to `stderr` and include Windows error codes when available.
+
+The program handles:
+- Paths that exceed the buffer.
+- Folders that cannot be enumerated.
+- Known folders that cannot be resolved.
+- Files that cannot be deleted.
+- Folders that cannot be deleted.
+
+The program continues after an error. However, it does not maintain a global counter and always exits with code `0`. Therefore, an external system cannot use the exit code to distinguish between complete success, partial success, or multiple errors.
+
+### 10. Changes made to the system
+
+In simulation mode, it makes no changes.
+
+In execution mode, it may:
+- Remove read-only, hidden, and system attributes.
+- Change folder attributes to normal.
+- Delete files.
+- Delete empty folders.
+- Remove links or reparse points without traversing the target.
+
+The code does not contain functions to:
+- Communicate over a network.
+- Download or upload information.
+- Create child processes.
+- Run external commands.
+- Modify the Registry.
+- Create services or scheduled tasks.
+- Establish persistence.
+- Collect credentials.
+- Encrypt files.
+- Physically overwrite data.
+- Recover deleted items.
+
+### 11. Logging and traceability
+
+Activity is displayed only in the console. The program does not create log files, Windows Event Log entries, timestamps, execution identifiers, or statistical summaries.
+
+To preserve the output, the invoking process can redirect it:
+
+```text
+RDL_Cleaner.exe --execute *> RDL_Cleaner.log
+```
+
+Redirection is not part of the internal code.
+
+### 12. Limitations and risks
+
+#### Permanent deletion
+
+There is no built-in recovery, and objects are not sent to the Recycle Bin.
+
+#### Redirected folders
+
+The program operates on the path returned by Windows. A local deletion could propagate to OneDrive or another synchronized system depending on its configuration.
+
+#### `MAX_PATH`
+
+Paths are stored in `MAX_PATH` buffers. Longer paths are skipped and produce an error.
+
+#### Locked files
+
+Files opened with incompatible locks may remain.
+
+#### Preservation by extension
+
+Shortcut preservation is based only on the `.lnk` and `.url` extensions; the program does not validate their contents.
+
+#### Prior attribute modification
+
+Attributes may be changed even if the subsequent deletion fails.
+
+#### Exit code
+
+The program always returns `0`, even if partial errors occur.
+
+#### No additional confirmation
+
+Once started with `--execute`, it proceeds without user interaction.
+
+#### Process context
+
+Running it under another identity may resolve and affect a different profile.
+
+#### Race conditions
+
+Contents may change between enumeration, verification, and deletion, altering the result.
+
+#### Empty-folder check
+
+If `FindFirstFileW` fails inside `directoryIsEmpty`, the function returns `true`. It will then attempt `RemoveDirectoryW`. Windows will prevent deletion if the folder actually contains items, but an attempted deletion and possibly an error will still occur.
+
+### 13. Behavior matrix
+
+| Item | Downloads | Documents | Desktop |
+|---|---|---|---|
+| Normal file | Delete | Delete | Delete |
+| `.lnk` file | Delete | Delete | Preserve |
+| `.url` file | Delete | Delete | Preserve |
+| Subfolder | Traverse | Traverse | Traverse |
+| Subfolder empty after processing | Delete | Delete | Delete |
+| Subfolder containing a preserved shortcut | Not applicable | Not applicable | Preserve |
+| Reparse point | Do not traverse; attempt removal | Do not traverse; attempt removal | Do not traverse; attempt removal |
+| Root folder | Preserve | Preserve | Preserve |
+
+### 14. Minimum audit tests
+
+- Run without arguments and confirm that no changes are made.
+- Run with `--execute` in a test profile.
+- Test normal files in all three folders.
+- Test read-only, hidden, and system files.
+- Test files locked by another process.
+- Test `.lnk` and `.url` files on the Desktop.
+- Test uppercase and lowercase extensions.
+- Test shortcuts inside Desktop subfolders.
+- Test empty and non-empty subfolders.
+- Test symbolic links and junctions.
+- Test paths longer than `MAX_PATH`.
+- Test redirected or synchronized folders.
+- Test with insufficient permissions.
+- Test as a standard user and with elevation.
+- Test under another account and under `SYSTEM`.
+- Change the contents while the program is running.
+- Confirm that all three root folders remain.
+- Confirm that errors do not stop the remaining items.
+- Confirm that the current exit code remains `0` when partial errors occur.
+- Record the hash of the exact binary submitted for approval.
+
+### 15. Approval considerations
+
+Before authorizing use, confirm:
+- The identity that will run the process.
+- The actual paths detected on the target computers.
+- The effect on OneDrive and redirected folders.
+- Formal acceptance of permanent deletion.
+- Correct preservation of shortcuts.
+- The mechanism used to retain execution evidence.
+- The handling of locked files and partial errors.
+- Review of the source code and the approved binary hash.
+
+Because it performs recursive data deletion, deployment must be authorized, documented, and limited to approved computers and scenarios.
+
+### 16. Audit summary
+
+RDL Cleaner is a local utility with no network connectivity or persistence mechanisms. It traverses the Downloads, Documents, and Desktop folders of the profile associated with the process. Its default mode is simulation, and deletion requires `--execute`.
+
+It preserves Desktop shortcuts by extension, does not traverse reparse points, and continues after individual errors. Its main risks are permanent deletion, operation on redirected folders, the absence of persistent logging, the `MAX_PATH` limit, the non-representative exit code, and dependence on the execution security context.
