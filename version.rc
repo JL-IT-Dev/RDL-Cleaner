@@ -1,0 +1,37 @@
+#include <windows.h>
+
+// Definición de ID del manifiesto si no se incluye por linker
+1 RT_MANIFEST "app.manifest"
+
+1 ICON ".\\rdl_cleaner.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     0,1,0,0
+PRODUCTVERSION  0,1,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0x0L
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 040904B0 = Idioma: Inglés (EE.UU.), Codificación: Unicode
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Jesus Alberto Lizarraga Rodriguez\0"
+            VALUE "FileDescription",  "Herramienta de prueba para limpieza de carpetas de usuario\0"
+            VALUE "FileVersion",      "0.1.0.0\0"
+            VALUE "InternalName",     "RDLCleaner\0"
+            VALUE "LegalCopyright",   "Copyright (C) 2026 Jesus Alberto Lizarraga Rodriguez. Versión de prueba.\0"
+            VALUE "OriginalFilename", ".\RDL_Cleaner.exe\0"
+            VALUE "ProductName",      "RDL Cleaner\0"
+            VALUE "ProductVersion",   "0.1.0.0\0"
+        END
+    END
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
